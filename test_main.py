@@ -102,3 +102,91 @@ def test_forecast_target_alignment():
     assert examples.loc[origin, "lag_1"] == series.loc[
         origin - pd.Timedelta(minutes=10)
     ]
+
+
+def test_duplicate_timestamps_use_one_median_value():
+    """
+    disc: check median for duplicate times
+
+    input:
+    samples(pd.DataFrame): repeated timestamps and temps
+
+    output:
+    None
+    """
+    samples = pd.DataFrame({
+        "timestamp": pd.to_datetime([
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:10:00Z",
+        ]),
+        "temp_c": [20.0, 20.0, 24.0, 21.0],
+    })
+
+    series, audit = audit_and_regularise(samples)
+
+    assert not series.index.has_duplicates
+    assert len(series) == 2
+
+    # 20, 20, 24 median = 20
+    assert series.iloc[0] == 20.0
+
+    assert audit["duplicate_timestamp_rows"] == 2
+    assert audit["conflicting_timestamp_groups"] == 1
+
+
+def test_missing_grid_intervals_remain_missing():
+    """
+    disc: check missing times stay NaN
+
+    input:
+    samples(pd.DataFrame): readings with a missing time
+
+    output:
+    None
+    """
+    samples = pd.DataFrame({
+        "timestamp": pd.to_datetime([
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:10:00Z",
+            "2024-01-01T00:30:00Z",
+        ]),
+        "temp_c": [20, 21, 23],
+    })
+
+    series, audit = audit_and_regularise(samples)
+
+    assert len(series) == 4
+
+    # 00:20 missing -> NaN
+    assert pd.isna(series.loc[pd.Timestamp("2024-01-01T00:20:00Z")])
+
+    assert audit["missing_grid_points"] == 1
+
+
+def test_missing_measurements_excluded_from_forecast_examples():
+    """
+    disc: check rows with missing data are skipped
+
+    input:
+    times(pd.DatetimeIndex): 200 timestamps
+    series(pd.Series): data with a missing temp
+
+    output:
+    None
+    """
+    times = pd.date_range("2024-01-01", periods=200, freq="10min", tz="UTC")
+    series = pd.Series(np.arange(200, dtype=float), index=times)
+
+    # one missing reading
+    series.iloc[40] = np.nan
+
+    examples = make_examples(series, 3)
+
+    assert not examples.isna().any().any()
+
+    # less examples if data mising
+    assert len(examples) < len(make_examples(series.ffill(), 3))
+
+    assert not examples.index.has_duplicates
