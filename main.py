@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 from time import perf_counter
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
@@ -506,6 +507,114 @@ def validate_models(series: pd.Series) -> pd.DataFrame:
     return best
 
 
+def final_test_models(series: pd.Series) -> pd.DataFrame:
+    """
+    disc: test chosen model on held out data
+
+    input:
+    series(pd.Series): clean temperature series
+
+    output:
+    pd.DataFrame: final model scores
+    """
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    destination = RESULTS / "test_scores.csv"
+    if destination.exists():
+        raise FileExistsError(
+            "test_scores.csv already exists. Final test is intentionally locked; "
+            "do not retune from test results."
+        )
+    choice_file = RESULTS / "selected_models.csv"
+    if not choice_file.exists():
+        raise FileNotFoundError("Run --stage validate before --stage test")
+    selected = pd.read_csv(choice_file)
+    train, valid, test = split_chronologically(series)
+    development = pd.concat([train, valid])
+    records = []
+    pending_predictions = {}
+    for row in selected.itertuples(index=False):
+        horizon = int(row.horizon_h)
+        label = str(row.configuration)
+        progress(f"\n[TEST] Horizon {horizon}h; selected configuration {label}")
+        if label not in FEATURE_SETS:
+            raise ValueError(f"Unknown configuration {label}")
+        tr = make_examples(development, horizon)
+        te = make_examples(test, horizon)
+        if min(len(tr), len(te)) < 20:
+            raise ValueError(f"Too few examples in held-out period at {horizon}h")
+        scores, predictions = fit_and_evaluate(tr, te, FEATURE_SETS[label])
+        records.append({
+            "horizon_h": horizon, "configuration": label,
+            "test_mae": scores["regression"]["mae"],
+            "test_rmse": scores["regression"]["rmse"],
+            "test_r2": scores["regression"]["r2"],
+            "baseline_mae": scores["persistence"]["mae"],
+            "baseline_rmse": scores["persistence"]["rmse"],
+            "baseline_r2": scores["persistence"]["r2"],
+            "fit_seconds": scores["fit_seconds"],
+            "predict_seconds": scores["predict_seconds"],
+            "test_rows": scores["n_evaluated"],
+        })
+        pending_predictions[horizon] = predictions
+    results = pd.DataFrame(records).sort_values("horizon_h")
+    for horizon, prediction in pending_predictions.items():
+        prediction.to_csv(RESULTS / f"predictions_{horizon}h.csv",
+                          index_label="origin_timestamp")
+    results.to_csv(destination, index=False)
+    progress("\n[TEST] Final held-out results saved to results/test_scores.csv")
+    print(results.to_string(index=False))
+    return results
+
+
+def plot_results(series: pd.Series) -> None:
+    """
+    disc: save graphs for the report
+
+    input:
+    series(pd.Series): clean temperature series
+
+    output:
+    None
+    """
+    figdir = RESULTS / "figures"
+    figdir.mkdir(parents=True, exist_ok=True)
+    if not (RESULTS / "test_scores.csv").exists():
+        raise FileNotFoundError("Run --stage test before --stage plot")
+    progress("[PLOT 1/3] Temperature history")
+    fig, ax = plt.subplots(figsize=(9, 3.5))
+    series.plot(ax=ax)
+    ax.set(title="Indoor temperature history", ylabel="Temperature (°C)", xlabel="Time (UTC)")
+    fig.tight_layout()
+    fig.savefig(figdir / "temperature_history.png", dpi=180)
+    plt.close(fig)
+
+    progress("[PLOT 2/3] MAE against forecast horizon")
+    scores = pd.read_csv(RESULTS / "test_scores.csv").sort_values("horizon_h")
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.plot(scores.horizon_h, scores.baseline_mae, marker="o", label="Persistence")
+    ax.plot(scores.horizon_h, scores.test_mae, marker="o", label="Linear regression")
+    ax.set(xlabel="Forecast horizon (hours)", ylabel="MAE (°C)",
+           title="Forecast error versus prediction horizon")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(figdir / "mae_by_horizon.png", dpi=180)
+    plt.close(fig)
+
+    progress("[PLOT 3/3] Actual versus predicted 3-hour temperature")
+    p = pd.read_csv(RESULTS / "predictions_3h.csv", parse_dates=["origin_timestamp"])
+    subset = p.head(150)
+    fig, ax = plt.subplots(figsize=(9, 3.5))
+    ax.plot(subset.origin_timestamp, subset.actual, label="Actual target")
+    ax.plot(subset.origin_timestamp, subset.regression, label="Linear forecast")
+    ax.set(xlabel="Forecast origin (UTC)", ylabel="Future temperature (°C)",
+           title="3-hour forecasts (target occurs 3 hours after origin)")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(figdir / "predictions_3h.png", dpi=180)
+    plt.close(fig)
+    progress(f"[PLOT] All graphs saved to {figdir}")
+
+
 def main() -> None:
     """
     disc: run the stage picked in terminal
@@ -517,7 +626,7 @@ def main() -> None:
     None
     """
     parser = argparse.ArgumentParser(description="MMA3001 temperature forecasting")
-    parser.add_argument("--stage", choices=('inspect', 'sensors', 'prepare', 'validate'),
+    parser.add_argument("--stage", choices=('inspect', 'sensors', 'prepare', 'validate', 'test', 'plot'),
                         default="inspect", help="Which project task to execute")
     parser.add_argument("--sensor-id", default=SENSOR_ID,
                         help="Sensor ID for prepare; choose only after verifying room")
@@ -544,6 +653,10 @@ def main() -> None:
             series = load_processed()
             if args.stage == "validate":
                 validate_models(series)
+            elif args.stage == "test":
+                final_test_models(series)
+            elif args.stage == "plot":
+                plot_results(series)
     except Exception as exc:
         progress(f"[ERROR] {type(exc).__name__}: {exc}")
         raise
