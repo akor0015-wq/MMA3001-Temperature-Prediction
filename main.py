@@ -311,6 +311,80 @@ def audit_and_regularise(raw: pd.DataFrame, freq: str = FREQ) -> tuple[pd.Series
     return series, report
 
 
+def inspect_data_quality(raw: pd.DataFrame, series: pd.Series) -> dict:
+    """
+    disc: check duplicates and missing readings
+
+    input:
+    raw(pd.DataFrame): raw sensor readings
+    series(pd.Series): clean time series
+
+    output:
+    dict: data quality summary
+    """
+    progress("\n[QUALITY 1/4] Analysing repeated sensor timestamps...")
+    source = raw.copy()
+    source["timestamp"] = pd.to_datetime(source["timestamp"], utc=True, errors="coerce")
+    source["temp_c"] = pd.to_numeric(source["temp_c"], errors="coerce")
+    source = source.loc[source["timestamp"].notna() & np.isfinite(source["temp_c"])]
+
+    groups = source.groupby("timestamp")["temp_c"].agg(
+        count="size", unique_values="nunique", min_temp="min", max_temp="max"
+    )
+    repeated = groups.loc[groups["count"] > 1]
+    conflicting = repeated.loc[repeated["unique_values"] > 1].copy()
+    conflicting["temperature_spread_c"] = conflicting["max_temp"] - conflicting["min_temp"]
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    conflicting.to_csv(RESULTS / "quality_conflicting_timestamps.csv", index_label="timestamp")
+    progress(f"[QUALITY] {len(repeated):,} timestamps were repeated; "
+             f"{len(conflicting):,} had conflicting temperatures")
+
+    progress("[QUALITY 2/4] Analysing missing ten-minute intervals...")
+    if series.index.has_duplicates:
+        raise ValueError("Processed series still contains duplicate timestamps")
+    missing = series.isna()
+    run_id = missing.ne(missing.shift(fill_value=False)).cumsum()
+    gap_sizes = missing.groupby(run_id).sum().astype(int)
+    gap_sizes = gap_sizes.loc[gap_sizes > 0]
+    slot_minutes = pd.Timedelta(FREQ).total_seconds() / 60
+    longest_gap_minutes = int(gap_sizes.max() * slot_minutes) if len(gap_sizes) else 0
+    gap_table = pd.DataFrame({"missing_intervals": gap_sizes.to_numpy()})
+    gap_table["duration_minutes"] = gap_table["missing_intervals"] * slot_minutes
+    gap_table.to_csv(RESULTS / "quality_missing_gaps.csv", index=False)
+
+    daily = pd.DataFrame({
+        "missing_intervals": missing.astype(int).resample("D").sum(),
+        "total_intervals": missing.astype(int).resample("D").count(),
+    })
+    daily["missing_percent"] = 100 * daily["missing_intervals"] / daily["total_intervals"]
+    daily.to_csv(RESULTS / "quality_daily_missing.csv", index_label="date_utc")
+
+    summary = {
+        "raw_rows": int(len(raw)),
+        "valid_rows": int(len(source)),
+        "unique_raw_timestamps": int(len(groups)),
+        "extra_duplicate_rows": int(len(source) - len(groups)),
+        "repeated_timestamp_groups": int(len(repeated)),
+        "conflicting_timestamp_groups": int(len(conflicting)),
+        "unique_regular_grid_timestamps": int(len(series)),
+        "observed_grid_intervals": int((~missing).sum()),
+        "missing_grid_intervals": int(missing.sum()),
+        "missing_percent": round(float(missing.mean() * 100), 2),
+        "missing_gaps": int(len(gap_sizes)),
+        "longest_gap_minutes": longest_gap_minutes,
+        "duplicate_handling": "median per exact timestamp and per 10-minute bin",
+        "missing_handling": "no interpolation; use complete feature/target rows only",
+    }
+    progress(f"[QUALITY] Missing: {summary['missing_grid_intervals']:,} intervals "
+             f"({summary['missing_percent']:.2f}%). "
+             f"Longest gap: {longest_gap_minutes} minutes")
+    progress("[QUALITY 3/4] Five days with the most missing measurements:")
+    print(daily.sort_values("missing_percent", ascending=False).head(5).to_string())
+    pd.Series(summary, name="value").to_csv(RESULTS / "quality_summary.csv", header=True)
+    progress("[QUALITY 4/4] Saved quality CSV files in results/")
+    return summary
+
+
 def save_processed(series: pd.Series, path: Path = PROCESSED) -> None:
     """
     disc: save cleaned data to CSV
@@ -626,7 +700,7 @@ def main() -> None:
     None
     """
     parser = argparse.ArgumentParser(description="MMA3001 temperature forecasting")
-    parser.add_argument("--stage", choices=('inspect', 'sensors', 'prepare', 'validate', 'test', 'plot'),
+    parser.add_argument("--stage", choices=("inspect", "sensors", "prepare", "quality", "validate", "test", "plot"),
                         default="inspect", help="Which project task to execute")
     parser.add_argument("--sensor-id", default=SENSOR_ID,
                         help="Sensor ID for prepare; choose only after verifying room")
@@ -648,7 +722,12 @@ def main() -> None:
             RESULTS.mkdir(parents=True, exist_ok=True)
             pd.Series(report).to_csv(RESULTS / "data_audit.csv", header=["value"])
             save_processed(series)
-            progress("[PREPARE] Audit saved in results/")
+            inspect_data_quality(raw, series)
+            progress("[PREPARE] Audit and quality reports saved in results/")
+        elif args.stage == "quality":
+            raw = load_sensor(sensor_id=args.sensor_id)
+            series, _ = audit_and_regularise(raw)
+            inspect_data_quality(raw, series)
         else:
             series = load_processed()
             if args.stage == "validate":
