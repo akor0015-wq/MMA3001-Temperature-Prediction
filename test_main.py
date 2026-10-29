@@ -190,3 +190,50 @@ def test_missing_measurements_excluded_from_forecast_examples():
     assert len(examples) < len(make_examples(series.ffill(), 3))
 
     assert not examples.index.has_duplicates
+
+
+def test_json_extracts_temperature_not_other_measures():
+    """
+    disc: check JSON gives only temp
+
+    input:
+    payload(list): temp and humidity data
+
+    output:
+    None
+    """
+    payload = [
+        {
+            "variable": {"name": "Humidity", "unit": "HR%"},
+            "values": [{"time": 1000, "value": 40}],
+        },
+        {
+            "variable": {"name": "Temperature", "unit": "°C"},
+            "values": [{"time": 1700000000, "value": 23.7}],
+        },
+    ]
+
+    # temp only, no humidity
+    assert extract_temperature(json.dumps(payload)) == [(1700000000, 23.7)]
+
+
+def test_duplicate_forecast_origins_are_rejected():
+    """
+    disc: check repeat times cause an error
+
+    input:
+    times(pd.DatetimeIndex): timestamps with a duplicate
+    series(pd.Series): data with repeated times
+
+    output:
+    None
+    """
+    times = pd.date_range("2024-01-01", periods=200, freq="10min", tz="UTC")
+
+    # add duplicate time
+    times = times.insert(30, times[30])
+
+    series = pd.Series(np.arange(201, dtype=float), index=times)
+
+    with pytest.raises(ValueError, match="unique timestamp"):
+        make_examples(series, 3)
