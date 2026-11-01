@@ -1,0 +1,22 @@
+,value
+raw_measurements,29341
+bad_timestamps,0
+invalid_temperatures,0
+valid_measurements,29341
+unique_measurement_timestamps,13800
+duplicate_timestamp_rows,15541
+repeated_timestamp_groups,111
+conflicting_timestamp_groups,0
+duplicate_resolution,"median per exact timestamp, then median per 10-minute bin"
+missing_data_handling,leave NaN; omit incomplete training/evaluation examples
+median_unique_interval_minutes,10.0
+grid_points,15191
+observed_grid_points,13800
+missing_grid_points,1391
+missing_grid_fraction,0.09156737541965637
+first_timestamp_utc,2024-02-29 06:00:00+00:00
+last_timestamp_utc,2024-06-13 17:40:00+00:00
+min_temp_c,19.0
+max_temp_c,28.5
+selected_sensor_id,6012002000869
+raw_csv_filename,5EnvSensor_MayToDec2024_180kRows.csv

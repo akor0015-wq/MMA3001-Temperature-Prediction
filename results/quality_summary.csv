@@ -1,0 +1,15 @@
+,value
+raw_rows,29341
+valid_rows,29341
+unique_raw_timestamps,13800
+extra_duplicate_rows,15541
+repeated_timestamp_groups,111
+conflicting_timestamp_groups,0
+unique_regular_grid_timestamps,15191
+observed_grid_intervals,13800
+missing_grid_intervals,1391
+missing_percent,9.16
+missing_gaps,1390
+longest_gap_minutes,20
+duplicate_handling,median per exact timestamp and per 10-minute bin
+missing_handling,no interpolation; use complete feature/target rows only
