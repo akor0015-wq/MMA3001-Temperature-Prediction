@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0 -- /home/ali/mma3001-venv/bin/python
+cachedir: .pytest_cache
+rootdir: /mnt/c/Users/Ali/Desktop/Ali/UNI/Y2/S1/MMA3001
+collecting ... collected 9 items
+
+test_main.py::test_perfect_prediction PASSED                             [ 11%]
+test_main.py::test_known_prediction_error PASSED                         [ 22%]
+test_main.py::test_chronological_split PASSED                            [ 33%]
+test_main.py::test_forecast_target_alignment PASSED                      [ 44%]
+test_main.py::test_duplicate_timestamps_use_one_median_value PASSED      [ 55%]
+test_main.py::test_missing_grid_intervals_remain_missing PASSED          [ 66%]
+test_main.py::test_missing_measurements_excluded_from_forecast_examples PASSED [ 77%]
+test_main.py::test_json_extracts_temperature_not_other_measures PASSED   [ 88%]
+test_main.py::test_duplicate_forecast_origins_are_rejected PASSED        [100%]
+
+=============================== warnings summary ===============================
+test_main.py::test_forecast_target_alignment
+test_main.py::test_missing_measurements_excluded_from_forecast_examples
+test_main.py::test_missing_measurements_excluded_from_forecast_examples
+  /mnt/c/Users/Ali/Desktop/Ali/UNI/Y2/S1/MMA3001/main.py:470: Pandas4Warning: DatetimeIndex.dayofyear is deprecated and will be removed in a future version. Use DatetimeIndex.day_of_year instead.
+    annual_phase = 2 * np.pi * (local_index.dayofyear - 1) / year_length
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 9 passed, 3 warnings in 1.49s =========================
