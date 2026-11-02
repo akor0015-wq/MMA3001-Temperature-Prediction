@@ -6,6 +6,8 @@
 
 A Python project that uses multiple linear regression to predict indoor temperatures 1, 3, 6 and 12 hours ahead. Different input features are compared with a persistence baseline. HVAC control is a possible future application, not part of this program.
 
+Link: https://github.com/akor0015-wq/MMA3001-Temperature-Prediction
+
 ## Setup
 
 Install Python 3 and the required libraries:
