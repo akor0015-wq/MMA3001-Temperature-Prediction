@@ -39,4 +39,4 @@ The `test` stage preserves an existing `results/test_scores.csv` rather than ove
 - Tests: `python -m pytest -v test_main.py`
 - Code documentation: `docs/main.html`
 
-The selected model achieved a **6-hour test MAE of 0.607°C**, compared with **1.241°C** for the persistence baseline. The program was verified with **9 passing tests**.
+The selected model achieved a 6-hour test MAE of 0.607°C, compared with 1.241°C for the persistence baseline. The program was verified with 9 passing tests.
